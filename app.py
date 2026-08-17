@@ -1,14 +1,12 @@
- from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
 @app.route('/', methods=['POST'])
 def aida_logic():
-    # Recibe el mensaje desde MacroDroid
-    data = request.json
+    data = request.json or {}
     mensaje = data.get("text", "").lower()
     
-    # Lógica básica de AIDA
     if "hola" in mensaje:
         respuesta = "Sistemas en línea, Señor. AIDA a tu servicio."
     elif "hora" in mensaje:
