@@ -49,7 +49,7 @@ HTML_CHAT = """
         <h1>AIDA // SYSTEM CONSOLE</h1>
     </header>
     <div id="chat-container">
-        <div class="message aida">Hola, señor. Sistema AIDA operativo y listo. ¿En qué trabajamos hoy?</div>
+        <div class="message aida">Hola, señor. Módulo de diagnóstico activo. ¿En qué trabajamos hoy?</div>
     </div>
     <div id="input-container">
         <label for="fileInput" class="file-btn" title="Adjuntar imagen">📎</label>
@@ -121,12 +121,24 @@ def home():
 @app.route('/modelos')
 def diagnostico_modelos():
     try:
-        modelos_compatibles = []
+        modelos_gemini = []
         if GEMINI_KEY:
             for m in genai.list_models():
                 if 'generateContent' in m.supported_generation_methods:
-                    modelos_compatibles.append(m.name)
-        return jsonify({"estado": "Operativo", "modelos_compatibles": modelos_compatibles})
+                    modelos_gemini.append(m.name)
+        
+        modelos_groq = []
+        if groq_client:
+            # Petición a la API de Groq para listar los modelos activos
+            lista_groq = groq_client.models.list()
+            for m in lista_groq.data:
+                modelos_groq.append(m.id)
+
+        return jsonify({
+            "estado": "Operativo", 
+            "modelos_gemini": modelos_gemini,
+            "modelos_groq": modelos_groq
+        })
     except Exception as e:
         return jsonify({"error_diagnostico": str(e)})
 
@@ -139,9 +151,10 @@ def api_chat():
     system_prompt = "Eres AIDA, un asistente virtual avanzado y técnico."
 
     try:
+        # Usamos provisionalmente el modelo de más alta capacidad actual en Groq
         if groq_client and not user_image:
             completion = groq_client.chat.completions.create(
-                model="llama3-70b-8192",
+                model="llama-3.3-70b-versatile",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
