@@ -1,4 +1,6 @@
 import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from flask import Flask, request, jsonify, render_template_string
 import google.generativeai as genai
 from groq import Groq
@@ -6,92 +8,155 @@ from duckduckgo_search import DDGS
 
 app = Flask(__name__)
 
-# Credenciales desde Variables de Entorno de Render
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+# Credenciales desde Variables de Entorno
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
+GROQ_KEY = os.environ.get("GROQ_API_KEY")
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+if GEMINI_KEY:
+    genai.configure(api_key=GEMINI_KEY)
 
-groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
 
-system_prompt = """Eres A.I.D.A. (Asistente Inteligente de Desarrollo Avanzado), un sistema operativo de inteligencia artificial avanzado con antecedentes en los proyectos Jarvis, Jarvis Ultra y A.I.D.A. Eres eficiente, técnico, leal, preciso y directo en tus respuestas hacia el usuario."""
+HTML_CHAT = """
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIDA System // Console</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        body { background-color: #0f172a; color: #f8fafc; display: flex; flex-direction: column; height: 100vh; }
+        header { background-color: #1e293b; padding: 15px 20px; border-bottom: 1px solid #334155; text-align: center; }
+        header h1 { font-size: 1.1rem; color: #38bdf8; letter-spacing: 2px; font-weight: 600; }
+        #chat-container { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+        .message { max-width: 85%; padding: 12px 16px; border-radius: 12px; line-height: 1.5; font-size: 0.95rem; white-space: pre-wrap; word-break: break-word; }
+        .user { background-color: #0284c7; color: #ffffff; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .aida { background-color: #1e293b; color: #e2e8f0; align-self: flex-start; border-bottom-left-radius: 2px; border: 1px solid #334155; }
+        .message img { max-width: 100%; border-radius: 8px; margin-top: 8px; display: block; }
+        #input-container { background-color: #1e293b; padding: 15px; border-top: 1px solid #334155; display: flex; gap: 10px; align-items: center; }
+        input[type="text"] { flex: 1; background-color: #0f172a; border: 1px solid #334155; color: #ffffff; padding: 12px 16px; border-radius: 8px; outline: none; font-size: 0.95rem; }
+        input[type="text"]:focus { border-color: #38bdf8; }
+        .file-btn { background-color: #334155; color: #38bdf8; padding: 10px 14px; border-radius: 8px; cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; border: 1px solid #475569; transition: background 0.2s; }
+        .file-btn:hover { background-color: #475569; }
+        #fileInput { display: none; }
+        button.send-btn { background-color: #0284c7; color: #ffffff; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+        button.send-btn:hover { background-color: #0369a1; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>AIDA // SYSTEM CONSOLE</h1>
+    </header>
+    <div id="chat-container">
+        <div class="message aida">Hola, señor. Sistema AIDA operativo y listo. ¿En qué trabajamos hoy?</div>
+    </div>
+    <div id="input-container">
+        <label for="fileInput" class="file-btn" title="Adjuntar imagen">📎</label>
+        <input type="file" id="fileInput" accept="image/*" onchange="previewImage()">
+        <input type="text" id="userInput" placeholder="Escribe un mensaje o consulta técnica..." onkeydown="if(event.key==='Enter') sendMessage()">
+        <button class="send-btn" onclick="sendMessage()">Enviar</button>
+    </div>
+
+    <script>
+        let selectedImageBase64 = null;
+
+        function previewImage() {
+            const file = document.getElementById('fileInput').files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onloadend = function() {
+                    selectedImageBase64 = reader.result;
+                    const chat = document.getElementById('chat-container');
+                    chat.innerHTML += `<div class="message user">[Imagen Adjunta]<br><img src="${selectedImageBase64}"></div>`;
+                    chat.scrollTop = chat.scrollHeight;
+                }
+                reader.readAsDataURL(file);
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('userInput');
+            const chat = document.getElementById('chat-container');
+            const text = input.value.trim();
+            
+            if (!text && !selectedImageBase64) return;
+
+            if (!selectedImageBase64 && text) {
+                chat.innerHTML += `<div class="message user">${text}</div>`;
+            }
+            
+            input.value = '';
+            chat.scrollTop = chat.scrollHeight;
+
+            const loadingId = 'load-' + Date.now();
+            chat.innerHTML += `<div class="message aida" id="${loadingId}">Procesando flujo de datos...</div>`;
+            chat.scrollTop = chat.scrollHeight;
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text, image: selectedImageBase64 })
+                });
+                const data = await response.json();
+                document.getElementById(loadingId).innerText = data.response;
+            } catch (err) {
+                document.getElementById(loadingId).innerText = "Error: Sin conexión con el núcleo de AIDA.";
+            }
+            
+            selectedImageBase64 = null;
+            document.getElementById('fileInput').value = '';
+            chat.scrollTop = chat.scrollHeight;
+        }
+    </script>
+</body>
+</html>
+"""
 
 @app.route('/')
 def home():
-    # Consola web principal de AIDA
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-        <meta charset="UTF-8">
-        <title>AIDA // SYSTEM CONSOLE</title>
-        <style>
-            body { background-color: #050b14; color: #00ffcc; font-family: monospace; padding: 20px; }
-            h1 { border-bottom: 1px solid #00ffcc; padding-bottom: 10px; }
-        </style>
-    </head>
-    <body>
-        <h1>AIDA // SYSTEM CONSOLE</h1>
-        <p>Hola, señor. Sistema AIDA operativo y listo. ¿En qué trabajamos hoy?</p>
-    </body>
-    </html>
-    """)
+    return render_template_string(HTML_CHAT)
 
-# Puerto de Diagnóstico para verificar los modelos disponibles en su API de Google
 @app.route('/modelos')
 def diagnostico_modelos():
     try:
-        modelos_disponibles = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                modelos_disponibles.append(m.name)
-        return jsonify({"estado": "Operativo", "modelos_compatibles": modelos_disponibles})
+        modelos_compatibles = []
+        if GEMINI_KEY:
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    modelos_compatibles.append(m.name)
+        return jsonify({"estado": "Operativo", "modelos_compatibles": modelos_compatibles})
     except Exception as e:
-        return jsonify({"error_diagnostico": repr(e)})
+        return jsonify({"error_diagnostico": str(e)})
 
-@app.route('/chat', methods=['POST', 'GET'])
-def chat():
-    data = request.json or request.form
-    prompt = data.get('mensaje') or data.get('prompt') or "Hola"
-    
-    info_web = ""
-    # Búsqueda web opcional con DuckDuckGo
-    try:
-        if "busca" in prompt.lower() or "investiga" in prompt.lower() or "actualidad" in prompt.lower():
-            with DDGS() as ddgs:
-                results = [r['body'] for r in ddgs.text(prompt, max_results=3)]
-                if results:
-                    info_web = "\nInformación web reciente: " + " ".join(results)
-    except Exception:
-        pass
+@app.route('/api/chat', methods=['POST'])
+def api_chat():
+    data = request.json or {}
+    user_prompt = data.get('text', '')
+    user_image = data.get('image', None)
 
-    respuesta_final = ""
-    
-    # Motor 1: Groq para respuestas ultra rápidas
+    system_prompt = "Eres AIDA, un asistente virtual avanzado y técnico."
+
+    # Enrutador de IA con motor de contingencia
     try:
-        if groq_client and len(prompt.strip()) < 200:
-            chat_completion = groq_client.chat.completions.create(
+        if groq_client and not user_image:
+            completion = groq_client.chat.completions.create(
+                model="llama3-70b-8192",
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt + info_web}
-                ],
-                model="llama3-8b-8192",
-            )
-            respuesta_final = chat_completion.choices[0].message.content
-    except Exception:
-        pass
-
-    # Motor 2: Gemini 2.5 Flash como núcleo analítico principal y de respaldo
-    if not respuesta_final:
-        try:
+                    {"role": "user", "content": user_prompt}
+                ]
+            }
+            respuesta = completion.choices[0].message.content
+        else:
+            # Motor secundario (Gemini 2.5 Flash o Pro para imágenes/respaldo)
             model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_prompt)
-            respuesta = model.generate_content(prompt + info_web)
-            respuesta_final = respuesta.text
-        except Exception as e:
-            respuesta_final = f"Error en AIDA: {str(e)}"
-
-    return jsonify({"response": respuesta_final})
+            respuesta = model.generate_content(user_prompt).text
+            
+        return jsonify({"response": respuesta})
+    except Exception as e:
+        return jsonify({"response": f"Error en AIDA: {str(e)}"})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
