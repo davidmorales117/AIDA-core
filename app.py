@@ -46,7 +46,7 @@ HTML_CHAT = """
         <h1>AIDA // SYSTEM CONSOLE</h1>
     </header>
     <div id="chat-container">
-        <div class="message aida">Hola, señor. Sistema AIDA operativo y listo. ¿En qué trabajamos hoy?</div>
+        <div class="message aida">Hola, señor. Sistema AIDA operativo. ¿En qué trabajamos hoy?</div>
     </div>
     <div id="input-container">
         <input type="text" id="userInput" placeholder="Escribe un mensaje o consulta técnica..." onkeydown="if(event.key==='Enter') sendMessage()">
@@ -77,7 +77,7 @@ HTML_CHAT = """
                 const data = await response.json();
                 document.getElementById(loadingId).innerText = data.response;
             } catch (err) {
-                document.getElementById(loadingId).innerText = "Error: Sin conexión con el servidor central de AIDA.";
+                document.getElementById(loadingId).innerText = "Error: Sin conexión con el servidor central.";
             }
             chat.scrollTop = chat.scrollHeight;
         }
@@ -89,7 +89,6 @@ HTML_CHAT = """
 def obtener_prompt_sistema():
     ahora = datetime.now(zoneinfo.ZoneInfo("America/Bogota"))
     hora_str = ahora.strftime("%Y-%m-%d %H:%M:%S")
-    
     return (
         f"Eres AIDA, una asistente técnica, analítica, directa y sincera. "
         f"Tu objetivo es dar opiniones honestas, razonar soluciones y detectar fallos lógicos. "
@@ -115,7 +114,7 @@ def enrutador_ia(prompt):
     if any(p in prompt_lower for p in palabras_clave):
         info_web = buscar_web(prompt)
 
-    # Motor 1: Groq (Respuestas cortas/rápidas)
+    # Motor 1: Groq (Rápido)
     if len(prompt) < 70 and not info_web and client_groq:
         try:
             completion = client_groq.chat.completions.create(
@@ -131,13 +130,16 @@ def enrutador_ia(prompt):
         except Exception:
             pass
 
-    # Motor 2: Gemini 1.5 Flash (Razonamiento denso/Código con sufijo actualizado)
+    # Motor 2: Gemini (Respaldo Seguro)
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash-latest", system_instruction=system_prompt)
-        respuesta = model.generate_content(prompt + info_web)
+        model = genai.GenerativeModel("gemini-pro")
+        prompt_completo = f"INSTRUCCIÓN DE SISTEMA:\n{system_prompt}\n\nCONSULTA:\n{prompt}\n{info_web}"
+        respuesta = model.generate_content(prompt_completo)
         return respuesta.text
     except Exception as e:
-        return f"Error en AIDA: {str(e)}"
+        return f"Error crítico en Motor Gemini: {str(e)}"
+
+# --- RUTAS DE APLICACIÓN ---
 
 @app.route('/')
 def home():
@@ -153,3 +155,17 @@ def chat():
 
     respuesta_final = enrutador_ia(user_text)
     return jsonify({"response": respuesta_final})
+
+@app.route('/modelos')
+def diagnostico_modelos():
+    try:
+        modelos_disponibles = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                modelos_disponibles.append(m.name)
+        return jsonify({"modelos_compatibles": modelos_disponibles, "estado": "Operativo"})
+    except Exception as e:
+        return jsonify({"error_diagnostico": str(e)})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
