@@ -60,12 +60,10 @@ HTML_CHAT = """
             const text = input.value.trim();
             if (!text) return;
 
-            // Renderizar mensaje del usuario
             chat.innerHTML += `<div class="message user">${text}</div>`;
             input.value = '';
             chat.scrollTop = chat.scrollHeight;
 
-            // Indicador de carga temporal
             const loadingId = 'load-' + Date.now();
             chat.innerHTML += `<div class="message aida" id="${loadingId}">Procesando...</div>`;
             chat.scrollTop = chat.scrollHeight;
@@ -133,9 +131,9 @@ def enrutador_ia(prompt):
         except Exception:
             pass
 
-    # Motor 2: Gemini 1.5 Flash (Razonamiento denso/Código)
+    # Motor 2: Gemini 1.5 Flash (Razonamiento denso/Código con sufijo actualizado)
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=system_prompt)
+        model = genai.GenerativeModel("gemini-1.5-flash-latest", system_instruction=system_prompt)
         respuesta = model.generate_content(prompt + info_web)
         return respuesta.text
     except Exception as e:
@@ -154,7 +152,4 @@ def chat():
         return jsonify({"response": "No se recibió texto."}), 400
 
     respuesta_final = enrutador_ia(user_text)
-    return jsonify({"response": respuesta_final})
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+    return jsonify({"response": respuesta_
