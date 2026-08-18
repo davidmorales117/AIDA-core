@@ -138,7 +138,6 @@ def api_chat():
 
     system_prompt = "Eres AIDA, un asistente virtual avanzado y técnico."
 
-    # Enrutador de IA con motor de contingencia
     try:
         if groq_client and not user_image:
             completion = groq_client.chat.completions.create(
@@ -147,10 +146,9 @@ def api_chat():
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ]
-            }
+            )
             respuesta = completion.choices[0].message.content
         else:
-            # Motor secundario (Gemini 2.5 Flash o Pro para imágenes/respaldo)
             model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_prompt)
             respuesta = model.generate_content(user_prompt).text
             
