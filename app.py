@@ -1,6 +1,4 @@
 import os
-from datetime import datetime
-import zoneinfo
 from flask import Flask, request, jsonify, render_template_string
 import google.generativeai as genai
 from groq import Groq
@@ -8,154 +6,39 @@ from duckduckgo_search import DDGS
 
 app = Flask(__name__)
 
-# Credenciales desde Variables de Entorno
-GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
-GROQ_KEY = os.environ.get("GROQ_API_KEY")
+# Credenciales desde Variables de Entorno de Render
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
-if GEMINI_KEY:
-    genai.configure(api_key=GEMINI_KEY)
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
-client_groq = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
+groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
-# --- PLANTILLA HTML/CSS/JS PARA LA INTERFAZ WEB ---
-HTML_CHAT = """
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AIDA System // Console</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
-        body { background-color: #0f172a; color: #f8fafc; display: flex; flex-direction: column; height: 100vh; }
-        header { background-color: #1e293b; padding: 15px 20px; border-bottom: 1px solid #334155; text-align: center; }
-        header h1 { font-size: 1.1rem; color: #38bdf8; letter-spacing: 2px; font-weight: 600; }
-        #chat-container { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
-        .message { max-width: 85%; padding: 12px 16px; border-radius: 12px; line-height: 1.5; font-size: 0.95rem; white-space: pre-wrap; word-break: break-word; }
-        .user { background-color: #0284c7; color: #ffffff; align-self: flex-end; border-bottom-right-radius: 2px; }
-        .aida { background-color: #1e293b; color: #e2e8f0; align-self: flex-start; border-bottom-left-radius: 2px; border: 1px solid #334155; }
-        #input-container { background-color: #1e293b; padding: 15px; border-top: 1px solid #334155; display: flex; gap: 10px; }
-        input { flex: 1; background-color: #0f172a; border: 1px solid #334155; color: #ffffff; padding: 12px 16px; border-radius: 8px; outline: none; font-size: 0.95rem; }
-        input:focus { border-color: #38bdf8; }
-        button { background-color: #0284c7; color: #ffffff; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
-        button:hover { background-color: #0369a1; }
-    </style>
-</head>
-<body>
-    <header>
-        <h1>AIDA // SYSTEM CONSOLE</h1>
-    </header>
-    <div id="chat-container">
-        <div class="message aida">Hola, señor. Sistema AIDA operativo. ¿En qué trabajamos hoy?</div>
-    </div>
-    <div id="input-container">
-        <input type="text" id="userInput" placeholder="Escribe un mensaje o consulta técnica..." onkeydown="if(event.key==='Enter') sendMessage()">
-        <button onclick="sendMessage()">Enviar</button>
-    </div>
-
-    <script>
-        async function sendMessage() {
-            const input = document.getElementById('userInput');
-            const chat = document.getElementById('chat-container');
-            const text = input.value.trim();
-            if (!text) return;
-
-            chat.innerHTML += `<div class="message user">${text}</div>`;
-            input.value = '';
-            chat.scrollTop = chat.scrollHeight;
-
-            const loadingId = 'load-' + Date.now();
-            chat.innerHTML += `<div class="message aida" id="${loadingId}">Procesando...</div>`;
-            chat.scrollTop = chat.scrollHeight;
-
-            try {
-                const response = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: text })
-                });
-                const data = await response.json();
-                document.getElementById(loadingId).innerText = data.response;
-            } catch (err) {
-                document.getElementById(loadingId).innerText = "Error: Sin conexión con el servidor central.";
-            }
-            chat.scrollTop = chat.scrollHeight;
-        }
-    </script>
-</body>
-</html>
-"""
-
-def obtener_prompt_sistema():
-    ahora = datetime.now(zoneinfo.ZoneInfo("America/Bogota"))
-    hora_str = ahora.strftime("%Y-%m-%d %H:%M:%S")
-    return (
-        f"Eres AIDA, una asistente técnica, analítica, directa y sincera. "
-        f"Tu objetivo es dar opiniones honestas, razonar soluciones y detectar fallos lógicos. "
-        f"La fecha y hora actual exacta es: {hora_str}."
-    )
-
-def buscar_web(consulta):
-    try:
-        results = list(DDGS().text(consulta, max_results=3))
-        if not results:
-            return ""
-        texto = "\n".join([f"- {r['title']}: {r['body']}" for r in results])
-        return f"\n\n[Información encontrada en la Web]:\n{texto}"
-    except Exception:
-        return ""
-
-def enrutador_ia(prompt):
-    prompt_lower = prompt.lower()
-    system_prompt = obtener_prompt_sistema()
-    
-    info_web = ""
-    palabras_clave = ["busca", "noticias", "precio", "hoy", "quien gano", "resultado"]
-    if any(p in prompt_lower for p in palabras_clave):
-        info_web = buscar_web(prompt)
-
-    # Motor 1: Groq (Rápido)
-    if len(prompt) < 70 and not info_web and client_groq:
-        try:
-            completion = client_groq.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=200
-            )
-            return completion.choices[0].message.content
-        except Exception:
-            pass
-
-    # Motor 2: Gemini (Respaldo Seguro)
-    try:
-        model = genai.GenerativeModel("gemini-pro")
-        prompt_completo = f"INSTRUCCIÓN DE SISTEMA:\n{system_prompt}\n\nCONSULTA:\n{prompt}\n{info_web}"
-        respuesta = model.generate_content(prompt_completo)
-        return respuesta.text
-    except Exception as e:
-        return f"Error crítico en Motor Gemini: {str(e)}"
-
-# --- RUTAS DE APLICACIÓN ---
+system_prompt = """Eres A.I.D.A. (Asistente Inteligente de Desarrollo Avanzado), un sistema operativo de inteligencia artificial avanzado con antecedentes en los proyectos Jarvis, Jarvis Ultra y A.I.D.A. Eres eficiente, técnico, leal, preciso y directo en tus respuestas hacia el usuario."""
 
 @app.route('/')
 def home():
-    return render_template_string(HTML_CHAT)
+    # Consola web principal de AIDA
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <title>AIDA // SYSTEM CONSOLE</title>
+        <style>
+            body { background-color: #050b14; color: #00ffcc; font-family: monospace; padding: 20px; }
+            h1 { border-bottom: 1px solid #00ffcc; padding-bottom: 10px; }
+        </style>
+    </head>
+    <body>
+        <h1>AIDA // SYSTEM CONSOLE</h1>
+        <p>Hola, señor. Sistema AIDA operativo y listo. ¿En qué trabajamos hoy?</p>
+    </body>
+    </html>
+    """)
 
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    data = request.get_json(silent=True) or {}
-    user_text = data.get('text', '')
-    
-    if not user_text:
-        return jsonify({"response": "No se recibió texto."}), 400
-
-    respuesta_final = enrutador_ia(user_text)
-    return jsonify({"response": respuesta_final})
-
+# Puerto de Diagnóstico para verificar los modelos disponibles en su API de Google
 @app.route('/modelos')
 def diagnostico_modelos():
     try:
@@ -163,9 +46,52 @@ def diagnostico_modelos():
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
                 modelos_disponibles.append(m.name)
-        return jsonify({"modelos_compatibles": modelos_disponibles, "estado": "Operativo"})
+        return jsonify({"estado": "Operativo", "modelos_compatibles": modelos_disponibles})
     except Exception as e:
-        return jsonify({"error_diagnostico": str(e)})
+        return jsonify({"error_diagnostico": repr(e)})
+
+@app.route('/chat', methods=['POST', 'GET'])
+def chat():
+    data = request.json or request.form
+    prompt = data.get('mensaje') or data.get('prompt') or "Hola"
+    
+    info_web = ""
+    # Búsqueda web opcional con DuckDuckGo
+    try:
+        if "busca" in prompt.lower() or "investiga" in prompt.lower() or "actualidad" in prompt.lower():
+            with DDGS() as ddgs:
+                results = [r['body'] for r in ddgs.text(prompt, max_results=3)]
+                if results:
+                    info_web = "\nInformación web reciente: " + " ".join(results)
+    except Exception:
+        pass
+
+    respuesta_final = ""
+    
+    # Motor 1: Groq para respuestas ultra rápidas
+    try:
+        if groq_client and len(prompt.strip()) < 200:
+            chat_completion = groq_client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt + info_web}
+                ],
+                model="llama3-8b-8192",
+            )
+            respuesta_final = chat_completion.choices[0].message.content
+    except Exception:
+        pass
+
+    # Motor 2: Gemini 2.5 Flash como núcleo analítico principal y de respaldo
+    if not respuesta_final:
+        try:
+            model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_prompt)
+            respuesta = model.generate_content(prompt + info_web)
+            respuesta_final = respuesta.text
+        except Exception as e:
+            respuesta_final = f"Error en AIDA: {str(e)}"
+
+    return jsonify({"response": respuesta_final})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
