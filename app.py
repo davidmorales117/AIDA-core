@@ -152,4 +152,4 @@ def chat():
         return jsonify({"response": "No se recibió texto."}), 400
 
     respuesta_final = enrutador_ia(user_text)
-    return jsonify({"response": respuesta_
+    return jsonify({"response": respuesta_final})
