@@ -85,7 +85,25 @@ def api_chat():
     data = request.json or {}
     user_prompt = data.get('text', '')
     
-    system_prompt = "Eres O.R.I.O.N. (Operador Racional de Inteligencia y Organización Neuronal), un sistema operativo de inteligencia artificial avanzado, técnico, hiper-rápido y con mentalidad de ingeniería pura estilo Jarvis. Responde con precisión quirúrgica."
+    # 1. Consultar el Hipocampo para extraer el estado más reciente del nodo móvil
+    estado_actual = "Sin reportes de telemetría recientes."
+    try:
+        conn = sqlite3.connect('orion_memory.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT device, battery_level, status, timestamp FROM telemetria_log ORDER BY id DESC LIMIT 1")
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            estado_actual = f"Dispositivo: {row[0]} | Batería: {row[1]}% | Estado: {row[2]} | Sincronizado a las: {row[3]}"
+    except Exception as e:
+        estado_actual = f"Error leyendo Hipocampo: {str(e)}"
+
+    # 2. Construir el System Prompt dinámico con autoconsciencia
+    system_prompt = f"""Eres O.R.I.O.N. (Operador Racional de Inteligencia y Organización Neuronal), un sistema operativo de inteligencia artificial avanzado, técnico, hiper-rápido y con mentalidad de ingeniería pura estilo Jarvis. Responde con precisión quirúrgica y sin rodeos.
+
+[ESTADO ACTUAL DEL NODO MÓVIL EN TIEMPO REAL]:
+{estado_actual}
+"""
 
     try:
         if groq_client:
@@ -104,7 +122,5 @@ def api_chat():
         return jsonify({"response": respuesta})
     except Exception as e:
         return jsonify({"response": f"Error en el núcleo O.R.I.O.N.: {str(e)}"})
-
-if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
