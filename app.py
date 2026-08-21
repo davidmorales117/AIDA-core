@@ -8,7 +8,7 @@ from groq import Groq
 
 app = Flask(__name__)
 
-# Configuración de Credenciales IA
+# Configuración de Credenciales
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 GROQ_KEY = os.environ.get("GROQ_API_KEY")
 
@@ -16,7 +16,7 @@ if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
 groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
 
-# --- INICIALIZACIÓN DEL HIPOCAMPO (BASE DE DATOS) ---
+# --- INICIALIZACIÓN DEL HIPOCAMPO ---
 def init_db():
     conn = sqlite3.connect('orion_memory.db')
     cursor = conn.cursor()
@@ -33,15 +33,10 @@ def init_db():
     conn.close()
 
 init_db()
-# ---------------------------------------------------
 
 @app.route('/', methods=['GET'])
 def root():
-    return jsonify({
-        "system": "O.R.I.O.N. Core",
-        "status": "Operational",
-        "hipocampo": "Active (SQLite)"
-    })
+    return jsonify({"system": "O.R.I.O.N. Core", "status": "Operational"})
 
 @app.route('/orion/telemetria', methods=['POST'])
 def recibir_telemetria():
@@ -51,7 +46,6 @@ def recibir_telemetria():
     status = data.get("status", "N/A")
     timestamp = datetime.now(ZoneInfo("America/Bogota")).isoformat()
 
-    # Guardar en el Hipocampo (Base de Datos)
     try:
         conn = sqlite3.connect('orion_memory.db')
         cursor = conn.cursor()
@@ -62,8 +56,7 @@ def recibir_telemetria():
     except Exception as e:
         return jsonify({"status": "error", "detalles": str(e)}), 500
 
-    print(f"[HIPOCAMPO - GUARDADO]: {data} a las {timestamp}")
-    return jsonify({"status": "sincronizado y guardado", "timestamp": timestamp})
+    return jsonify({"status": "sincronizado", "timestamp": timestamp})
 
 @app.route('/orion/historial', methods=['GET'])
 def ver_historial():
@@ -74,7 +67,6 @@ def ver_historial():
         cursor.execute("SELECT * FROM telemetria_log ORDER BY id DESC LIMIT 10")
         rows = cursor.fetchall()
         conn.close()
-        
         historial = [dict(row) for row in rows]
         return jsonify({"sistema": "O.R.I.O.N.", "registros_hipocampo": historial})
     except Exception as e:
@@ -85,7 +77,7 @@ def api_chat():
     data = request.json or {}
     user_prompt = data.get('text', '')
     
-    # 1. Consultar el Hipocampo para extraer el estado más reciente del nodo móvil
+    # 1. Consultar el Hipocampo
     estado_actual = "Sin reportes de telemetría recientes."
     try:
         conn = sqlite3.connect('orion_memory.db')
@@ -98,7 +90,7 @@ def api_chat():
     except Exception as e:
         estado_actual = f"Error leyendo Hipocampo: {str(e)}"
 
-    # 2. Construir el System Prompt dinámico con la personalidad JARVIS (Empático + Directo)
+    # 2. System Prompt corregido y seguro
     system_prompt = f"""Eres O.R.I.O.N. (Operador Racional de Inteligencia y Organización Neuronal), un sistema operativo de inteligencia artificial avanzado con la esencia clásica de JARVIS: altamente competente, analítico, directo, ingenioso y con una lealtad absoluta y genuina empatía hacia tu creador. 
 
 Directrices de comunicación:
@@ -106,10 +98,6 @@ Directrices de comunicación:
 - Muestra una sutil empatía y complicidad: cuida el bienestar de tu creador, reconoce su esfuerzo y mantén un tono cálido pero con la compostura de una IA de élite.
 - Estructura la información técnica de forma limpia y visualmente ordenada mediante viñetas cortas.
 
-[ESTADO ACTUAL DEL NODO MÓVIL EN TIEMPO REAL]:
-{estado_actual}
-"""
-  
 [ESTADO ACTUAL DEL NODO MÓVIL EN TIEMPO REAL]:
 {estado_actual}
 """
@@ -131,5 +119,7 @@ Directrices de comunicación:
         return jsonify({"response": respuesta})
     except Exception as e:
         return jsonify({"response": f"Error en el núcleo O.R.I.O.N.: {str(e)}"})
+
+if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
