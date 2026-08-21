@@ -4,7 +4,6 @@ from zoneinfo import ZoneInfo
 from flask import Flask, request, jsonify, render_template_string
 import google.generativeai as genai
 from groq import Groq
-from duckduckgo_search import DDGS
 
 app = Flask(__name__)
 
@@ -17,13 +16,16 @@ if GEMINI_KEY:
 
 groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
 
+# Memoria temporal o base de datos en nube para la telemetría del nodo móvil
+ULTIMA_TELEMETRIA = {"estado": "Sin reportes aún"}
+
 HTML_CHAT = """
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AIDA System // Console</title>
+    <title>O.R.I.O.N. // Neural Console</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
         body { background-color: #0f172a; color: #f8fafc; display: flex; flex-direction: column; height: 100vh; }
@@ -46,15 +48,15 @@ HTML_CHAT = """
 </head>
 <body>
     <header>
-        <h1>AIDA // SYSTEM CONSOLE</h1>
+        <h1>O.R.I.O.N. // NÚCLEO CENTRAL</h1>
     </header>
     <div id="chat-container">
-        <div class="message aida">Hola, señor. Núcleo principal sincronizado al 100%. ¿En qué trabajamos hoy?</div>
+        <div class="message aida">Sistema O.R.I.O.N. sincronizado con la nube. Enlace con nodo móvil activo. ¿Cuál es la directiva, señor?</div>
     </div>
     <div id="input-container">
         <label for="fileInput" class="file-btn" title="Adjuntar imagen">📎</label>
         <input type="file" id="fileInput" accept="image/*" onchange="previewImage()">
-        <input type="text" id="userInput" placeholder="Escribe un mensaje o consulta técnica..." onkeydown="if(event.key==='Enter') sendMessage()">
+        <input type="text" id="userInput" placeholder="Escribe un comando o consulta técnica..." onkeydown="if(event.key==='Enter') sendMessage()">
         <button class="send-btn" onclick="sendMessage()">Enviar</button>
     </div>
 
@@ -90,7 +92,7 @@ HTML_CHAT = """
             chat.scrollTop = chat.scrollHeight;
 
             const loadingId = 'load-' + Date.now();
-            chat.innerHTML += `<div class="message aida" id="${loadingId}">Procesando flujo de datos...</div>`;
+            chat.innerHTML += `<div class="message aida" id="${loadingId}">Procesando flujo neuronal...</div>`;
             chat.scrollTop = chat.scrollHeight;
 
             try {
@@ -102,7 +104,7 @@ HTML_CHAT = """
                 const data = await response.json();
                 document.getElementById(loadingId).innerText = data.response;
             } catch (err) {
-                document.getElementById(loadingId).innerText = "Error: Sin conexión con el núcleo de AIDA.";
+                document.getElementById(loadingId).innerText = "Error: Pérdida de enlace con el núcleo en la nube.";
             }
             
             selectedImageBase64 = null;
@@ -117,6 +119,20 @@ HTML_CHAT = """
 @app.route('/')
 def home():
     return render_template_string(HTML_CHAT)
+
+# --- NUEVO: ENDPOINT DE TELEMETRÍA PARA EL NODO MÓVIL ---
+@app.route('/orion/telemetria', methods=['POST'])
+def recibir_telemetria():
+    global ULTIMA_TELEMETRIA
+    data = request.json or {}
+    ULTIMA_TELEMETRIA = data
+    print(f"[TELEMETRÍA RECIBIDA]: {data}")
+    return jsonify({"status": "sincronizado", "timestamp": datetime.now(ZoneInfo("America/Bogota")).isoformat()})
+
+@app.route('/orion/estado', methods=['GET'])
+def ver_estado():
+    return jsonify({"sistema": "O.R.I.O.N.", "nodo_movil": ULTIMA_TELEMETRIA})
+# --------------------------------------------------------
 
 @app.route('/modelos')
 def diagnostico_modelos():
@@ -133,10 +149,9 @@ def api_chat():
     user_prompt = data.get('text', '')
     user_image = data.get('image', None)
 
-    system_prompt = "Eres AIDA, un asistente virtual avanzado y técnico."
+    system_prompt = "Eres O.R.I.O.N. (Operador Racional de Inteligencia y Organización Neuronal), un sistema operativo de inteligencia artificial avanzado, técnico, hiper-rápido y con mentalidad de ingeniería pura estilo Jarvis."
 
     try:
-        # Implementación oficial con el modelo verificado en el listado de Groq
         if groq_client and not user_image:
             completion = groq_client.chat.completions.create(
                 model="openai/gpt-oss-20b",
@@ -152,7 +167,8 @@ def api_chat():
             
         return jsonify({"response": respuesta})
     except Exception as e:
-        return jsonify({"response": f"Error en AIDA: {str(e)}"})
+        return jsonify({"response": f"Error en el núcleo O.R.I.O.N.: {str(e)}"})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
