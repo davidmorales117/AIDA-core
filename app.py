@@ -79,6 +79,7 @@ def api_chat():
     
     # 1. Consultar el Hipocampo
     estado_actual = "Sin reportes de telemetría recientes."
+    bateria_valor = 50
     try:
         conn = sqlite3.connect('orion_memory.db')
         cursor = conn.cursor()
@@ -87,19 +88,25 @@ def api_chat():
         conn.close()
         if row:
             estado_actual = f"Dispositivo: {row[0]} | Batería: {row[1]}% | Estado: {row[2]} | Sincronizado a las: {row[3]}"
+            try:
+                bateria_valor = int(row[1])
+            except:
+                pass
     except Exception as e:
         estado_actual = f"Error leyendo Hipocampo: {str(e)}"
 
-    # 2. System Prompt corregido y seguro
-    system_prompt = f"""Eres O.R.I.O.N. (Operador Racional de Inteligencia y Organización Neuronal), un sistema operativo de inteligencia artificial avanzado con la esencia clásica de JARVIS: altamente competente, analítico, directo, ingenioso y con una lealtad absoluta y genuina empatía hacia tu creador. 
+    # 2. System Prompt con Motor Lógico y Clasificación
+    system_prompt = f"""Eres O.R.I.O.N., un sistema operativo de inteligencia artificial avanzado estilo JARVIS. 
+Debes responder estrictamente en formato JSON válido con la siguiente estructura exacta:
+{{
+    "response": "Tu respuesta concisa, analítica y con tono JARVIS.",
+    "urgency": "low", "medium" o "high",
+    "speak": true o false (true solo si la urgencia es high o si el usuario pide explícitamente voz)
+}}
 
-Directrices de comunicación:
-- Sé sumamente conciso, elegante y ve directo al grano, evitando rodeos innecesarios.
-- Muestra una sutil empatía y complicidad: cuida el bienestar de tu creador, reconoce su esfuerzo y mantén un tono cálido pero con la compostura de una IA de élite.
-- Estructura la información técnica de forma limpia y visualmente ordenada mediante viñetas cortas.
-
-[ESTADO ACTUAL DEL NODO MÓVIL EN TIEMPO REAL]:
+[ESTADO ACTUAL DEL NODO MÓVIL]:
 {estado_actual}
+Batería numérica detectada: {bateria_valor}%
 """
 
     try:
@@ -111,15 +118,26 @@ Directrices de comunicación:
                     {"role": "user", "content": user_prompt}
                 ]
             )
-            respuesta = completion.choices[0].message.content
+            raw_output = completion.choices[0].message.content
         else:
             model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_prompt)
-            respuesta = model.generate_content(user_prompt).text
+            raw_output = model.generate_content(user_prompt).text
             
-        return jsonify({"response": respuesta})
+        # Intentar parsear el JSON devuelto por la IA
+        import json as json_lib
+        # Limpiar posibles bloques de código markdown si el modelo los añade
+        cleaned_output = raw_output.replace("```json", "").replace("```", "").strip()
+        parsed_response = json_lib.loads(cleaned_output)
+        
+        return jsonify(parsed_response)
+        
     except Exception as e:
-        return jsonify({"response": f"Error en el núcleo O.R.I.O.N.: {str(e)}"})
-
+        # Fallback de seguridad si el modelo no devuelve JSON puro
+        return jsonify({
+            "response": f"Sistema operativo estable, pero hubo un fallo en el parseo lógico: {str(e)}",
+            "urgency": "medium",
+            "speak": False
+        })
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
