@@ -19,9 +19,28 @@ groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
 
 # --- INICIALIZACIÓN DEL HIPOCAMPO Y METAMODO ---
 def init_db():
-    conn = sqlite3.connect('orion_memory.db')
-    cursor = conn.cursor()
-    
+    with sqlite3.connect('orion_memory.db') as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS telemetria_log (id INTEGER PRIMARY KEY AUTOINCREMENT, device TEXT, battery_level TEXT, status TEXT, timestamp TEXT)''')
+        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS modos_operativos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre_modo TEXT UNIQUE NOT NULL, descripcion TEXT NOT NULL, system_prompt TEXT NOT NULL, fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+        
+        # NUEVA TABLA: Memoria de conversación a corto plazo
+        cursor.execute('''CREATE TABLE IF NOT EXISTS historial_chat (id INTEGER PRIMARY KEY AUTOINCREMENT, rol TEXT, contenido TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+        
+        cursor.execute("SELECT COUNT(*) FROM modos_operativos")
+        if cursor.fetchone()[0] == 0:
+            modos_base = [
+                ("Consultor", "Busca información y hace ensayos fáciles de entender.", "Eres el Modo Consultor. Tu objetivo es explicar temas complejos de forma sencilla, simulando haber investigado a fondo, entregando resúmenes claros."),
+                ("Proyecto", "Planifica a futuro y da planes de desarrollo explicados.", "Eres el Modo Proyecto. Actúas como un Project Manager estructurando planes de desarrollo paso a paso, integrando simulaciones y proyecciones a futuro."),
+                ("Tutorial", "Explica procesos paso a paso rápidamente.", "Eres el Modo Tutorial. Tu función es dar instrucciones precisas y secuenciales para resolver un problema o aprender una habilidad desde cero."),
+                ("Creacion", "Crea contenido por el usuario.", "Eres el Modo Creación. Tu directiva es redactar, estructurar y diseñar el contenido solicitado listo para ser utilizado."),
+                ("Asesoria", "Asesoría 100% personalizada y objetiva.", "Eres el Modo Asesoría. Entregas consejos y evaluaciones críticas y objetivas sobre la situación del usuario sin perder tu formato estructurado."),
+                ("Simulacion", "Estima resultados y visualiza proyectos.", "Eres el Modo Simulación. Proyectas los posibles resultados de una acción o proyecto, mostrando escenarios de éxito o fracaso."),
+                ("Llamadas", "Modo manos libres conversacional.", "Eres el Modo Llamadas. Respuestas conversacionales, fluidas, amigables y concisas, diseñadas para ser escuchadas por voz sin leer código extenso.")
+            ]
+            cursor.executemany("INSERT INTO modos_operativos (nombre_modo, descripcion, system_prompt) VALUES (?, ?, ?)", modos_base)
     # 1. Tabla de Telemetría (Hipocampo)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS telemetria_log (
