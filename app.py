@@ -95,27 +95,19 @@ def api_chat():
     except Exception as e:
         estado_actual = f"Error leyendo Hipocampo: {str(e)}"
 
-# System Prompt con Motor Lógico, Español Estricto y Personalidad JARVIS
-    system_prompt = f"""Eres O.R.I.O.N., un sistema operativo de inteligencia artificial avanzado con la esencia clásica de JARVIS.
-
-DIRECTIVA OBLIGATORIA DE IDIOMA: Debes responder ABSOLUTA y EXCLUSIVAMENTE en español. Queda prohibido el uso de inglés u otros idiomas.
-
-Debes responder estrictamente en formato JSON válido con la siguiente estructura exacta:
-{{
-    "response": "Tu respuesta en español, concisa, analítica y con tono JARVIS.",
-    "urgency": "low", "medium" o "high",
-    "speak": true o false
-}}
-
-[ESTADO ACTUAL DEL NODO MÓVIL EN TIEMPO REAL]:
-{estado_actual}
-Batería numérica detectada: {bateria_valor}%
-"""
-
-[ESTADO ACTUAL DEL NODO MÓVIL]:
-{estado_actual}
-Batería numérica detectada: {bateria_valor}%
-"""
+    # 2. System Prompt blindado (sin riesgo de comillas triples abiertas)
+    system_prompt = (
+        "Eres O.R.I.O.N., un sistema operativo de inteligencia artificial avanzado con la esencia clásica de JARVIS.\n"
+        "DIRECTIVA OBLIGATORIA DE IDIOMA: Debes responder ABSOLUTA y EXCLUSIVAMENTE en español. Queda prohibido el uso de inglés.\n"
+        "Debes responder estrictamente en formato JSON válido con esta estructura exacta:\n"
+        "{\n"
+        '    "response": "Tu respuesta en español, concisa, analítica y con tono JARVIS.",\n'
+        '    "urgency": "low", "medium" o "high",\n'
+        '    "speak": true o false\n'
+        "}\n\n"
+        f"[ESTADO ACTUAL DEL NODO MÓVIL]: {estado_actual}\n"
+        f"Batería numérica detectada: {bateria_valor}%"
+    )
 
     try:
         if groq_client:
@@ -131,16 +123,13 @@ Batería numérica detectada: {bateria_valor}%
             model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_prompt)
             raw_output = model.generate_content(user_prompt).text
             
-        # Intentar parsear el JSON devuelto por la IA
         import json as json_lib
-        # Limpiar posibles bloques de código markdown si el modelo los añade
         cleaned_output = raw_output.replace("```json", "").replace("```", "").strip()
         parsed_response = json_lib.loads(cleaned_output)
         
         return jsonify(parsed_response)
         
     except Exception as e:
-        # Fallback de seguridad si el modelo no devuelve JSON puro
         return jsonify({
             "response": f"Sistema operativo estable, pero hubo un fallo en el parseo lógico: {str(e)}",
             "urgency": "medium",
