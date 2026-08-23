@@ -1,5 +1,5 @@
-flask
-gunicorn
-google-generativeai>=0.5.4
-groq
-duckduckgo-search
+Flask==3.0.2
+gunicorn==21.2.0
+google-generativeai==0.8.3
+groq==0.4.2
+requests==2.31.0
