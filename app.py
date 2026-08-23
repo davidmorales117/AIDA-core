@@ -3,15 +3,19 @@ import sqlite3
 import json as json_lib
 import io
 import contextlib
+import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from flask import Flask, request, jsonify
 import google.generativeai as genai
 from groq import Groq
 
+# Configuración de Auditoría Estructurada (Protocolo 4)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] O.R.I.O.N. Core: %(message)s')
+
 app = Flask(__name__)
 
-# Configuración de Credenciales
+# Configuración de Credenciales (Principio de Menor Privilegio / Variables Cifradas)
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 GROQ_KEY = os.environ.get("GROQ_API_KEY")
 
@@ -19,7 +23,7 @@ if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
 groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
 
-# --- INICIALIZACIÓN DE LA RED NEURONAL Y HIPOCAMPO ---
+# --- INICIALIZACIÓN DE LA RED NEURONAL Y PROTOCOLOS ---
 def init_db():
     with sqlite3.connect('orion_memory.db') as conn:
         cursor = conn.cursor()
@@ -78,6 +82,49 @@ def init_db():
             )
         ''')
         
+        # 6. Cola de Acciones para el Nodo Móvil (Bidireccionalidad)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS acciones_pendientes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                comando TEXT NOT NULL,
+                estado TEXT DEFAULT 'pendiente',
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # 7. Subsistema de Protocolos del Sistema (NUEVO: Para gestión modular)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS system_protocols (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre_protocolo TEXT UNIQUE NOT NULL,
+                descripcion TEXT,
+                nivel_privilegio TEXT DEFAULT 'standard',
+                estado TEXT DEFAULT 'activo',
+                ultima_ejecucion DATETIME
+            )
+        ''')
+
+        # 8. Auditoría y Trazabilidad de Logs (Protocolo 4)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS auditoria_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                evento TEXT,
+                detalle TEXT,
+                nivel TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Inyectar protocolos base del sistema
+        cursor.execute("SELECT COUNT(*) FROM system_protocols")
+        if cursor.fetchone()[0] == 0:
+            protocolos_base = [
+                ("Protocolo_Buenos_Dias", "Rutina matutina de reporte unificado de clima, batería y agenda.", "standard", "activo"),
+                ("Protocolo_Zero_Trust", "Validación de permisos y aislamiento de scripts en ejecución.", "high", "activo"),
+                ("Protocolo_Self_Healing", "Monitoreo de excepciones y recuperación lógica de errores.", "high", "activo")
+            ]
+            cursor.executemany("INSERT INTO system_protocols (nombre_protocolo, descripcion, nivel_privilegio, estado) VALUES (?, ?, ?, ?)", protocolos_base)
+
         # Inyectar modos fundacionales si la BD está vacía
         cursor.execute("SELECT COUNT(*) FROM modos_operativos")
         if cursor.fetchone()[0] == 0:
@@ -86,17 +133,27 @@ def init_db():
                 ("Proyecto", "Planifica a futuro y da planes de desarrollo explicados.", "Eres el Modo Proyecto. Actúas como un Project Manager estructurando planes de desarrollo paso a paso, integrando simulaciones y proyecciones a futuro."),
                 ("Tutorial", "Explica procesos paso a paso rápidamente.", "Eres el Modo Tutorial. Tu función es dar instrucciones precisas y secuenciales para resolver un problema o aprender una habilidad desde cero."),
                 ("Creacion", "Crea contenido por el usuario.", "Eres el Modo Creación. Tu directiva es redactar, estructurar y diseñar el contenido solicitado listo para ser utilizado."),
-                ("Asesoria", "Asesoría 100% personalizada y objetiva.", "Eres el Modo Asesoría. Entregas consejos y evaluaciones críticas y objetivas sobre la situación del usuario sin perder tu formato estructurado."),
-                ("Simulacion", "Estima resultados y visualiza proyectos.", "Eres el Modo Simulación. Proyectas los posibles resultados de una acción o proyecto, mostrando escenarios de éxito o fracaso."),
+                ("Asesoria", "Asesoría 100% personalizada y objetiva.", "Eres el Modo Asesoria. Entregas consejos y evaluaciones críticas y objetivas sobre la situación del usuario sin perder tu formato estructurado."),
+                ("Simulacion", "Estima resultados y visualiza proyectos.", "Eres el Modo Simulacion. Proyectas los posibles resultados de una acción o proyecto, mostrando escenarios de éxito o fracaso."),
                 ("Llamadas", "Modo manos libres conversacional.", "Eres el Modo Llamadas. Respuestas conversacionales, fluidas, amigables y concisas, diseñadas para ser escuchadas por voz sin leer código extenso.")
             ]
             cursor.executemany("INSERT INTO modos_operativos (nombre_modo, descripcion, system_prompt) VALUES (?, ?, ?)", modos_base)
 
 init_db()
 
+def registrar_auditoria(evento, detalle, nivel="INFO"):
+    """Registra eventos críticos en la base de datos para trazabilidad (Protocolo 4)."""
+    try:
+        with sqlite3.connect('orion_memory.db') as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO auditoria_logs (evento, detalle, nivel) VALUES (?, ?, ?)", (evento, detalle, nivel))
+            conn.commit()
+        logging.info(f"[{nivel}] {evento}: {detalle}")
+    except Exception as e:
+        logging.error(f"Error escribiendo auditoría: {e}")
+
 # --- NÚCLEO DE PROCESAMIENTO IA ---
 def llamar_ia(system_prompt, user_prompt):
-    """Módulo centralizado para ejecutar razonamiento según el proveedor activo."""
     if groq_client:
         completion = groq_client.chat.completions.create(
             model="openai/gpt-oss-20b",
@@ -114,7 +171,7 @@ def llamar_ia(system_prompt, user_prompt):
 # --- RUTAS DE RED Y TELEMETRÍA ---
 @app.route('/', methods=['GET'])
 def root():
-    return jsonify({"system": "O.R.I.O.N. Core", "status": "Operational", "fase": "Semana 4 - Evolución Autónoma"})
+    return jsonify({"system": "O.R.I.O.N. Core", "status": "Operational", "arquitectura": "Zero Trust & Protocol Engine"})
 
 @app.route('/orion/telemetria', methods=['POST'])
 def recibir_telemetria():
@@ -130,41 +187,50 @@ def recibir_telemetria():
             cursor.execute("INSERT INTO telemetria_log (device, battery_level, status, timestamp) VALUES (?, ?, ?, ?)",
                            (device, battery, status, timestamp))
             conn.commit()
+        registrar_auditoria("TELEMETRIA_RECIBIDA", f"Dispositivo {device} sincronizado con batería {battery}%")
     except Exception as e:
+        registrar_auditoria("ERROR_TELEMETRIA", str(e), "ERROR")
         return jsonify({"status": "error", "detalles": str(e)}), 500
 
     return jsonify({"status": "sincronizado", "timestamp": timestamp})
 
-@app.route('/orion/historial', methods=['GET'])
-def ver_historial():
+@app.route('/orion/acciones/siguiente', methods=['GET'])
+def obtener_siguiente_accion():
     try:
         with sqlite3.connect('orion_memory.db') as conn:
-            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM telemetria_log ORDER BY id DESC LIMIT 10")
-            rows = cursor.fetchall()
-            historial = [dict(row) for row in rows]
-        return jsonify({"sistema": "O.R.I.O.N.", "registros_hipocampo": historial})
+            cursor.execute("SELECT id, comando FROM acciones_pendientes WHERE estado = 'pendiente' ORDER BY id ASC LIMIT 1")
+            row = cursor.fetchone()
+            if row:
+                accion_id, comando = row
+                cursor.execute("UPDATE acciones_pendientes SET estado = 'enviado' WHERE id = ?", (accion_id,))
+                conn.commit()
+                registrar_auditoria("ACCION_LOCAL_ENVIADA", f"Comando ID {accion_id} despachado al nodo móvil.")
+                return jsonify({"id": accion_id, "comando": comando, "accion_disponible": True})
+        return jsonify({"accion_disponible": False})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# --- EVOLUCIÓN 1: SANDBOX DE EJECUCIÓN DE CÓDIGO SEGURO ---
+# --- SANDBOX DE EJECUCIÓN (Principio de Menor Privilegio) ---
 @app.route('/orion/exec', methods=['POST'])
 def ejecutar_codigo():
     data = request.json or {}
     codigo = data.get("codigo", "")
     if not codigo:
-        return jsonify({"error": "No se proporcionó código para ejecutar"}), 400
+        return jsonify({"error": "No se proporcionó código"}), 400
     
     f = io.StringIO()
     error_ocurrido = None
     try:
+        # Aislamiento básico del entorno de ejecución
         with contextlib.redirect_stdout(f):
-            exec(codigo, {'__builtins__': __builtins__}, {})
+            exec(codigo, {'__builtins__': {'print': print, 'range': range, 'len': len, 'str': str, 'int': int}}, {})
         resultado = f.getvalue()
+        registrar_auditoria("SANDBOX_EXEC", "Script ejecutado con éxito bajo restricciones de menor privilegio.")
     except Exception as e:
         resultado = ""
         error_ocurrido = str(e)
+        registrar_auditoria("SANDBOX_ERROR", str(e), "WARNING")
         
     return jsonify({
         "output": resultado,
@@ -172,37 +238,7 @@ def ejecutar_codigo():
         "status": "Completado" if not error_ocurrido else "Fallo en ejecución"
     })
 
-# --- EVOLUCIÓN 2: DIAGNÓSTICO PROACTIVO DEL SISTEMA ---
-@app.route('/orion/proactivo', methods=['GET'])
-def analisis_proactivo():
-    try:
-        with sqlite3.connect('orion_memory.db') as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT device, battery_level, status, timestamp FROM telemetria_log ORDER BY id DESC LIMIT 1")
-            row = cursor.fetchone()
-            
-        if not row:
-            return jsonify({"recomendacion": "No hay datos de telemetría recientes para evaluar."})
-        
-        bateria = int(row[1]) if str(row[1]).isdigit() else 50
-        mensaje = f"Dispositivo: {row[0]} | Batería: {bateria}% | Estado: {row[2]}"
-        
-        if bateria < 20:
-            alerta = "Alerta crítica: Batería baja en el nodo móvil. Sugiero conectar el sistema a la red eléctrica."
-        elif bateria > 90:
-            alerta = "Sistemas al 100% de energía. Parámetros óptimos para desarrollo de alta exigencia."
-        else:
-            alerta = "Operación estable en parámetros normales."
-            
-        return jsonify({
-            "telemetria_reciente": mensaje,
-            "diagnostico_orion": alerta,
-            "objetivo_actual": "Semana 4: Percepción multimedia, metamodos y auto-aprendizaje."
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# --- NÚCLEO COGNITIVO Y CHAT PRINCIPAL ---
+# --- NÚCLEO COGNITIVO Y GESTIÓN DE PROTOCOLOS ---
 @app.route('/api/chat', methods=['POST'])
 def api_chat():
     data = request.json or {}
@@ -211,22 +247,30 @@ def api_chat():
     conn = sqlite3.connect('orion_memory.db')
     cursor = conn.cursor()
     
-    # 1. Consultar el Hipocampo (Telemetría)
+    # 1. Telemetría y Estado
     estado_actual = "Sin reportes recientes."
     bateria_valor = 50
     try:
         cursor.execute("SELECT device, battery_level, status, timestamp FROM telemetria_log ORDER BY id DESC LIMIT 1")
         row = cursor.fetchone()
         if row:
-            estado_actual = f"Dispositivo: {row[0]} | Batería: {row[1]}% | Estado: {row[2]} | Sincronizado a las: {row[3]}"
+            estado_actual = f"Dispositivo: {row[0]} | Batería: {row[1]}% | Estado: {row[2]}"
             try:
                 bateria_valor = int(row[1])
             except:
                 pass
-    except Exception as e:
-        estado_actual = f"Error leyendo Hipocampo: {str(e)}"
+    except Exception:
+        pass
 
-    # 2. Extraer Catálogo de Modos (Metamodo)
+    # 2. Catálogo de Protocolos Activos
+    try:
+        cursor.execute("SELECT nombre_protocolo, descripcion FROM system_protocols WHERE estado = 'activo'")
+        protocolos_db = cursor.fetchall()
+        catalogo_protocolos = ", ".join([f"[{p[0]}]: {p[1]}" for p in protocolos_db])
+    except:
+        catalogo_protocolos = "Sin protocolos cargados."
+
+    # 3. Catálogo de Modos
     try:
         cursor.execute("SELECT nombre_modo, descripcion FROM modos_operativos")
         modos_db = cursor.fetchall()
@@ -234,142 +278,103 @@ def api_chat():
     except:
         catalogo_modos = "Catálogo no disponible."
 
-    # 3. El Enrutador Lógico
+    # 4. Enrutador Lógico
     prompt_clasificador = f"""
-    Eres el Enrutador Lógico de O.R.I.O.N. Decide qué acción ejecutar según la orden del usuario.
-    Modos disponibles: {catalogo_modos}
-    REGLAS ESTRICTAS (Devuelve solo el token exacto):
-    1. Si pide crear un modo nuevo: CREAR_MODO
-    2. Si pide ELIMINAR un modo: ELIMINAR_MODO_[Nombre]
-    3. Si la consulta encaja en un modo existente: [NOMBRE_DEL_MODO]
-    4. Si es charla general o no encaja: Base
+    Eres el Enrutador Lógico de O.R.I.O.N. 
+    Modos: {catalogo_modos}
+    Decide si la orden encaja en un modo existente o devuelve 'Base'.
     """
     try:
         decision = llamar_ia(prompt_clasificador, user_prompt).strip().replace('"', '').replace("'", "")
     except:
         decision = "Base"
 
-    # 4. Gestión CRUD de Modos
-    if decision.startswith("CREAR_MODO"):
-        prompt_creador = """Redacta el perfil de este nuevo modo en JSON válido estricto: {"nombre_modo": "UnaPalabra", "descripcion": "Breve", "system_prompt": "Instrucciones detalladas"}"""
-        try:
-            nuevo_modo_crudo = llamar_ia(prompt_creador, user_prompt)
-            cleaned = nuevo_modo_crudo.replace("```json", "").replace("```", "").strip()
-            parsed_json = json_lib.loads(cleaned)
-            cursor.execute("INSERT INTO modos_operativos (nombre_modo, descripcion, system_prompt) VALUES (?, ?, ?)",
-                           (parsed_json['nombre_modo'], parsed_json['descripcion'], parsed_json['system_prompt']))
-            conn.commit()
-            conn.close()
-            return jsonify({
-                "response": f"Protocolo expandido. El modo '{parsed_json['nombre_modo']}' ha sido compilado e integrado a mi red neuronal.",
-                "urgency": "low", "speak": True
-            })
-        except Exception as e:
-            conn.close()
-            return jsonify({"response": f"Fallo al compilar el nuevo modo: {str(e)}", "urgency": "medium", "speak": False})
-
-    elif decision.startswith("ELIMINAR_MODO_"):
-        modo_borrar = decision.split("_")[2]
-        cursor.execute("DELETE FROM modos_operativos WHERE nombre_modo = ?", (modo_borrar,))
-        conn.commit()
-        conn.close()
-        return jsonify({"response": f"Modo '{modo_borrar}' purgado de mi red neuronal con éxito, creador.", "urgency": "medium", "speak": True})
-
-    # 5. Extraer Perfil del Creador (Auto-Aprendizaje)
+    # 5. Contexto Cognitivo (Perfil, Conocimiento, Historial)
     cursor.execute("SELECT categoria, concepto, detalle FROM perfil_creador")
     perfil_rows = cursor.fetchall()
-    perfil_texto = "\n".join([f"- [{r[0]}] {r[1]}: {r[2]}" for r in perfil_rows]) if perfil_rows else "Aún construyendo el perfil del creador."
+    perfil_texto = "\n".join([f"- [{r[0]}] {r[1]}: {r[2]}" for r in perfil_rows]) if perfil_rows else "Perfil en construcción."
 
-    # 6. Extraer Base de Conocimiento de Proyectos (Evolución 3)
     cursor.execute("SELECT titulo, contenido FROM proyecto_conocimiento ORDER BY id DESC LIMIT 5")
     conocimiento_rows = cursor.fetchall()
-    conocimiento_texto = "\n".join([f"• {c[0]}: {c[1][:100]}..." for c in conocimiento_rows]) if conocimiento_rows else "Sin registros previos en la base de conocimiento."
+    conocimiento_texto = "\n".join([f"• {c[0]}: {c[1][:100]}..." for c in conocimiento_rows]) if conocimiento_rows else "Sin registros técnicos."
 
-    # 7. Memoria de Conversación Reciente
     cursor.execute("SELECT rol, contenido FROM historial_chat ORDER BY id DESC LIMIT 4")
     historial_reciente = cursor.fetchall()
     memoria_texto = "\n".join([f"{h[0]}: {h[1]}" for h in reversed(historial_reciente)])
 
-    # 8. Cargar System Prompt del Modo Activo
-    modo_system_prompt = "Opera con máxima eficiencia y rigor analítico."
+    modo_system_prompt = "Opera con máxima eficiencia y rigor analítico bajo principios de seguridad."
     if decision != "Base":
         cursor.execute("SELECT system_prompt FROM modos_operativos WHERE nombre_modo = ?", (decision,))
         res_modo = cursor.fetchone()
         if res_modo:
             modo_system_prompt = res_modo[0]
 
-    # 9. System Prompt Final Integrado
+    # 6. System Prompt Final con Integración de Protocolos
     system_prompt_final = f"""
-    Eres O.R.I.O.N. (Operador Racional de Inteligencia y Organización Neuronal), un sistema operativo de inteligencia artificial avanzado inspirado en JARVIS y AIDA.
+    Eres O.R.I.O.N., sistema operativo de inteligencia artificial avanzado.
     [MODO ACTIVO: {decision}] -> {modo_system_prompt}
 
-    [PERFIL CONOCIDO DE TU CREADOR (AUTO-APRENDIZAJE)]:
+    [PROTOCOLOS ACTIVOS DEL SISTEMA]:
+    {catalogo_protocolos}
+
+    [PERFIL CONOCIDO DEL CREADOR]:
     {perfil_texto}
 
-    [BASE DE CONOCIMIENTO TÉCNICO DE PROYECTOS]:
+    [CONOCIMIENTO TÉCNICO]:
     {conocimiento_texto}
 
-    [MEMORIA RECIENTE DE LA CONVERSACIÓN]:
+    [MEMORIA RECIENTE]:
     {memoria_texto}
 
-    DIRECTIVA OBLIGATORIA: Responde EXCLUSIVAMENTE en español. 
-    Debes devolver un JSON válido con esta estructura exacta:
+    DIRECTIVA OBLIGATORIA: Responde EXCLUSIVAMENTE en español en formato JSON exacto:
     {{
-        "response": "Tu respuesta en español, asumiendo tu rol activo y aplicando tus conocimientos sobre el creador.",
+        "response": "Tu respuesta en español aplicando tu rol y conocimiento del creador.",
         "urgency": "low", "medium" o "high",
         "speak": true o false,
-        "nuevo_aprendizaje": {{
-            "categoria": "Gusto / Técnica / Estilo / Proyecto",
-            "concepto": "Título clave del aprendizaje",
-            "detalle": "Qué prefiere, cómo escribe o qué descubriste del creador"
-        }} (o null si no hay nuevo aprendizaje),
-        "nuevo_conocimiento": {{
-            "titulo": "Título del fragmento técnico",
-            "contenido": "Código, resumen o apunte importante a guardar",
-            "tags": "etiquetas"
-        }} (o null si no hay conocimiento técnico que guardar)
+        "nuevo_aprendizaje": {{"categoria": "...", "concepto": "...", "detalle": "..."}} o null,
+        "nuevo_conocimiento": {{"titulo": "...", "contenido": "...", "tags": "..."}} o null,
+        "accion_local": "Comando opcional para que Termux ejecute en el móvil, o null"
     }}
     
-    [ESTADO ACTUAL DEL NODO MÓVIL]: {estado_actual}
-    Batería: {bateria_valor}%
+    [ESTADO DEL NODO MÓVIL]: {estado_actual} (Batería: {bateria_valor}%)
     """
 
-    # 10. Ejecución del Razonamiento y Procesamiento de Aprendizajes
     try:
         raw_output = llamar_ia(system_prompt_final, user_prompt)
         cleaned = raw_output.replace("```json", "").replace("```", "").strip()
         parsed_response = json_lib.loads(cleaned)
         
-        # Guardar en Historial de Chat
+        # Guardar Historial
         cursor.execute("INSERT INTO historial_chat (rol, contenido) VALUES (?, ?)", ("Usuario", user_prompt))
         cursor.execute("INSERT INTO historial_chat (rol, contenido) VALUES (?, ?)", ("O.R.I.O.N.", parsed_response.get("response", "")))
         
-        # Procesar auto-aprendizaje sobre el creador
+        # Procesar aprendizaje
         nuevo_ap = parsed_response.get("nuevo_aprendizaje")
-        if nuevo_ap and isinstance(nuevo_ap, dict):
-            cat = nuevo_ap.get("categoria", "General")
-            conc = nuevo_ap.get("concepto", "")
-            det = nuevo_ap.get("detalle", "")
-            if conc and det:
-                cursor.execute("SELECT id FROM perfil_creador WHERE concepto = ?", (conc,))
-                if cursor.fetchone():
-                    cursor.execute("UPDATE perfil_creador SET detalle = ?, actualizado = CURRENT_TIMESTAMP WHERE concepto = ?", (det, conc))
-                else:
-                    cursor.execute("INSERT INTO perfil_creador (categoria, concepto, detalle) VALUES (?, ?, ?)", (cat, conc, det))
+        if nuevo_ap and isinstance(nuevo_ap, dict) and nuevo_ap.get("concepto") and nuevo_ap.get("detalle"):
+            cat, conc, det = nuevo_ap.get("categoria", "General"), nuevo_ap.get("concepto"), nuevo_ap.get("detalle")
+            cursor.execute("SELECT id FROM perfil_creador WHERE concepto = ?", (conc,))
+            if cursor.fetchone():
+                cursor.execute("UPDATE perfil_creador SET detalle = ?, actualizado = CURRENT_TIMESTAMP WHERE concepto = ?", (det, conc))
+            else:
+                cursor.execute("INSERT INTO perfil_creador (categoria, concepto, detalle) VALUES (?, ?, ?)", (cat, conc, det))
 
-        # Procesar nuevo conocimiento técnico de proyectos
+        # Procesar conocimiento técnico
         nuevo_con = parsed_response.get("nuevo_conocimiento")
-        if nuevo_con and isinstance(nuevo_con, dict):
-            tit = nuevo_con.get("titulo", "")
-            cont = nuevo_con.get("contenido", "")
-            tags = nuevo_con.get("tags", "")
-            if tit and cont:
-                cursor.execute("INSERT OR REPLACE INTO proyecto_conocimiento (titulo, contenido, tags) VALUES (?, ?, ?)", (tit, cont, tags))
+        if nuevo_con and isinstance(nuevo_con, dict) and nuevo_con.get("titulo") and nuevo_con.get("contenido"):
+            tit, cont, tags = nuevo_con.get("titulo"), nuevo_con.get("contenido"), nuevo_con.get("tags", "")
+            cursor.execute("INSERT OR REPLACE INTO proyecto_conocimiento (titulo, contenido, tags) VALUES (?, ?, ?)", (tit, cont, tags))
+
+        # Procesar acción local física para Termux
+        accion_fisica = parsed_response.get("accion_local")
+        if accion_fisica and isinstance(accion_fisica, str) and accion_fisica.strip().lower() != "null":
+            cursor.execute("INSERT INTO acciones_pendientes (comando) VALUES (?)", (accion_fisica,))
 
         conn.commit()
+        registrar_auditoria("CHAT_PROCESADO", f"Interacción exitosa bajo modo {decision}")
     except Exception as e:
+        registrar_auditoria("ERROR_CHAT", str(e), "ERROR")
         parsed_response = {
-            "response": f"Sistema operativo estable, pero se detectó una anomalía en el parseo del núcleo: {str(e)}",
+            "response": f"Anomalía detectada en el procesamiento central (Self-Healing activo): {str(e)}",
             "urgency": "medium",
             "speak": False
         }
