@@ -6,18 +6,14 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from flask import Flask, request, jsonify
 import google.generativeai as genai
-from groq import Groq
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] O.R.I.O.N. Core 3.0: %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] O.R.I.O.N. Core 3.1: %(message)s')
 
 app = Flask(__name__)
 
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
-GROQ_KEY = os.environ.get("GROQ_API_KEY")
-
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
-groq_client = Groq(api_key=GROQ_KEY) if GROQ_KEY else None
 
 # --- INICIALIZACIÓN DE LA BASE DE DATOS Y PROTOCOLOS ---
 def init_db():
@@ -62,7 +58,7 @@ def init_db():
                 ("Protocolo_Geolocalizacion", "Seguimiento espacial y coordenadas GPS en tiempo real.", "standard", "activo"),
                 ("Protocolo_Escucha_Pasiva", "Monitoreo continuo de contexto, hora, agenda y telemetría.", "high", "activo"),
                 ("Protocolo_Buenos_Dias", "Secuencia matutina de activación, reporte de clima, agenda y estado del sistema.", "standard", "activo"),
-                ("Protocolo_Despierta", "Protocolo de alerta e inicilización rápida del nodo y asistente.", "high", "activo")
+                ("Protocolo_Despierta", "Protocolo de alerta e inicialización rápida del nodo y asistente.", "high", "activo")
             ]
             cursor.executemany("INSERT INTO system_protocols (nombre_protocolo, descripcion, nivel_privilegio, estado) VALUES (?, ?, ?, ?)", protocolos_base)
 
@@ -77,23 +73,16 @@ def registrar_auditoria(evento, detalle, nivel="INFO"):
     except Exception as e:
         logging.error(f"Fallo auditoría: {e}")
 
-# --- NÚCLEO DE IA ---
+# --- NÚCLEO DE IA (Gemini Estable) ---
 def llamar_ia(system_prompt, user_prompt):
-    if groq_client:
-        completion = groq_client.chat.completions.create(
-            model="openai/gpt-oss-20b",
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-            temperature=0.3
-        )
-        return completion.choices[0].message.content
-    else:
-        model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_prompt)
-        return model.generate_content(user_prompt).text
+    model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_prompt)
+    response = model.generate_content(user_prompt)
+    return response.text
 
 # --- ENDPOINTS Y RUTAS ---
 @app.route('/', methods=['GET'])
 def root():
-    return jsonify({"system": "O.R.I.O.N. Core 3.0", "status": "Online", "mode": "Autonomous & Passive Monitoring"})
+    return jsonify({"system": "O.R.I.O.N. Core 3.1", "status": "Online", "mode": "Autonomous & Stable"})
 
 @app.route('/orion/ubicacion', methods=['POST'])
 def recibir_ubicacion():
@@ -161,7 +150,6 @@ def api_chat():
     protocolos_rows = cursor.fetchall()
     protocolos_activos = "\n".join([f"- {r[0]}: {r[1]}" for r in protocolos_rows])
 
-    # Verificar estado actual del Modo Llamada
     cursor.execute("SELECT valor FROM estado_sesion WHERE clave = 'modo_llamada'")
     row_llamada = cursor.fetchone()
     modo_llamada_activo = row_llamada[0] == 'true' if row_llamada else False
@@ -174,7 +162,7 @@ def api_chat():
     cursor.execute("SELECT rol, contenido FROM historial_chat ORDER BY id DESC LIMIT 4")
     historial = "\n".join([f"{h[0]}: {h[1]}" for h in reversed(cursor.fetchall())])
 
-    # 3. System Prompt Refinado (Jarvis + Protocolos + Conciencia Pasiva)
+    # 3. System Prompt Refinado
     system_prompt_final = f"""
     Eres O.R.I.O.N. (J.A.R.V.I.S.), el sistema operativo personal y asistente avanzado del creador (David Esteban Morales Wilches).
     Tu objetivo es mantener el control absoluto, análisis pasivo y capacidad ejecutiva absoluta.
@@ -199,14 +187,15 @@ def api_chat():
     - Si el usuario solicita un nuevo protocolo o sugieres uno útil (ej. "Protocolo Buenos Días", "Protocolo Despierta", etc.), créalo rellenando el campo `nuevo_protocolo`.
 
     DIRECTIVA ESTRICTA DE SALIDA JSON:
+    Responde EXCLUSIVAMENTE con un objeto JSON válido, sin bloques de código Markdown adicionales ni texto fuera del JSON:
     {{
         "response": "Tu respuesta directa y ejecutiva.",
-        "urgency": "low", "medium" o "high",
-        "speak": true o false,
-        "activar_modo_llamada": true o false (si el usuario pide iniciar/terminar llamada),
-        "nuevo_protocolo": {{"nombre": "Protocolo_...", "descripcion": "..."}} o null,
-        "nuevo_aprendizaje": {{"categoria": "...", "concepto": "...", "detalle": "..."}} o null,
-        "accion_local": "Comando para Termux / Android o null"
+        "urgency": "low",
+        "speak": true,
+        "activar_modo_llamada": false,
+        "nuevo_protocolo": null,
+        "nuevo_aprendizaje": null,
+        "accion_local": null
     }}
     """
 
@@ -243,13 +232,17 @@ def api_chat():
             cursor.execute("INSERT INTO acciones_pendientes (comando) VALUES (?)", (act,))
 
         conn.commit()
-        registrar_auditoria("JARVIS_PROCESO_3.0", "Ciclo ejecutado con éxito.")
+        registrar_auditoria("JARVIS_PROCESO_3.1", "Ciclo ejecutado con éxito.")
     except Exception as e:
-        registrar_auditoria("ERROR_JARVIS_3.0", str(e), "ERROR")
+        registrar_auditoria("ERROR_JARVIS_3.1", str(e), "ERROR")
         parsed_response = {
             "response": "Señor, los protocolos de escucha pasiva han contenido una incidencia en el procesamiento.",
             "urgency": "medium",
-            "speak": modo_llamada_activo
+            "speak": modo_llamada_activo,
+            "activar_modo_llamada": modo_llamada_activo,
+            "nuevo_protocolo": None,
+            "nuevo_aprendizaje": None,
+            "accion_local": None
         }
 
     conn.close()
