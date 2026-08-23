@@ -165,14 +165,16 @@ def api_chat():
     except:
         catalogo_modos = "Error cargando catálogo."
 
-    # 3. El Enrutador Lógico
+  # 3. El Enrutador Lógico Avanzado
     prompt_clasificador = f"""
-    Eres el Enrutador Lógico. Decide qué modo debe manejar el mensaje del usuario.
+    Eres el Enrutador Lógico de AIDA. Decide qué acción ejecutar según el usuario.
     Modos disponibles: {catalogo_modos}
-    REGLAS:
-    1. Si el usuario pide crear un modo nuevo explícitamente, responde ÚNICAMENTE: CREAR_MODO
-    2. Si la consulta encaja en un modo existente, responde ÚNICAMENTE con el NOMBRE DEL MODO.
-    3. Si es charla general o no encaja, responde ÚNICAMENTE: Base
+    REGLAS ESTRICTAS DE RESPUESTA (Solo devuelve la palabra exacta):
+    1. Si pide crear un modo nuevo: CREAR_MODO
+    2. Si pide ELIMINAR un modo: ELIMINAR_MODO_[Nombre] (ej. ELIMINAR_MODO_Consultor)
+    3. Si pide MODIFICAR/EDITAR un modo: EDITAR_MODO_[Nombre]
+    4. Si es una consulta normal que encaja en un modo existente: [NOMBRE_DEL_MODO]
+    5. Si no encaja en nada: Base
     """
     
     try:
@@ -180,76 +182,71 @@ def api_chat():
     except:
         decision = "Base"
 
-    # 4. El Generador (Auto-Creación de Modos)
-    if "CREAR_MODO" in decision.upper():
-        prompt_creador = """
-        Eres el arquitecto del sistema operativo. El usuario solicitó un nuevo modo.
-        Redacta el perfil de este nuevo modo respondiendo ESTRICTAMENTE en JSON válido:
-        {
-          "nombre_modo": "UnaPalabra",
-          "descripcion": "Breve resumen",
-          "system_prompt": "Instrucciones detalladas de comportamiento y análisis."
-        }
-        """
-        try:
-            nuevo_modo_crudo = llamar_ia(prompt_creador, user_prompt)
-            cleaned_nuevo_modo = nuevo_modo_crudo.replace("```json", "").replace("```", "").strip()
-            nuevo_modo_json = json_lib.loads(cleaned_nuevo_modo)
-            
-            cursor.execute("INSERT INTO modos_operativos (nombre_modo, descripcion, system_prompt) VALUES (?, ?, ?)",
-                           (nuevo_modo_json['nombre_modo'], nuevo_modo_json['descripcion'], nuevo_modo_json['system_prompt']))
-            conn.commit()
-            conn.close()
-            
-            return jsonify({
-                "response": f"Protocolo expandido. El modo '{nuevo_modo_json['nombre_modo']}' ha sido compilado y acoplado a mi red neuronal.",
-                "urgency": "low",
-                "speak": True
-            })
-        except Exception as e:
-            conn.close()
-            return jsonify({"response": f"Fallo al compilar el nuevo modo: {str(e)}", "urgency": "medium", "speak": False})
+    conn = sqlite3.connect('orion_memory.db')
+    cursor = conn.cursor()
 
-    # 5. Cargar System Prompt del Modo Seleccionado
-    modo_system_prompt = "Opera de manera general."
-    if decision != "Base":
+    # 4. Auto-Gestión de la Red Neuronal (CRUD)
+    if decision.startswith("CREAR_MODO"):
+        # (Usa la misma lógica de creación que ya teníamos, es perfecta)
+        prompt_creador = """Redacta el perfil de este nuevo modo en JSON válido: {"nombre_modo": "X", "descripcion": "Y", "system_prompt": "Z"}"""
+        nuevo_modo_crudo = llamar_ia(prompt_creador, user_prompt)
+        nuevo_modo_json = json_lib.loads(nuevo_modo_crudo.replace("```json", "").replace("```", "").strip())
+        cursor.execute("INSERT INTO modos_operativos (nombre_modo, descripcion, system_prompt) VALUES (?, ?, ?)", (nuevo_modo_json['nombre_modo'], nuevo_modo_json['descripcion'], nuevo_modo_json['system_prompt']))
+        conn.commit()
+        conn.close()
+        return jsonify({"response": f"Modo '{nuevo_modo_json['nombre_modo']}' acoplado a mi red neuronal.", "urgency": "low", "speak": True})
+
+    elif decision.startswith("ELIMINAR_MODO_"):
+        modo_a_borrar = decision.split("_")[2]
+        cursor.execute("DELETE FROM modos_operativos WHERE nombre_modo = ?", (modo_a_borrar,))
+        conn.commit()
+        conn.close()
+        return jsonify({"response": f"Protocolo '{modo_a_borrar}' purgado de la memoria, señor.", "urgency": "medium", "speak": True})
+
+    # (Nota: La lógica de EDITAR_MODO se procesaría extrayendo el modo y haciendo un UPDATE en SQL con un nuevo prompt generado por la IA)
+
+    # 5. Extraer Historial de Charla (Memoria a Corto Plazo)
+    cursor.execute("SELECT rol, contenido FROM historial_chat ORDER BY id DESC LIMIT 4")
+    historial_reciente = cursor.fetchall()
+    memoria_texto = "\n".join([f"{h[0]}: {h[1]}" for h in reversed(historial_reciente)])
+
+    # 6. Cargar Modo Activo
+    modo_system_prompt = "Opera de manera general y analítica."
+    if decision != "Base" and not decision.startswith("EDITAR"):
         cursor.execute("SELECT system_prompt FROM modos_operativos WHERE nombre_modo = ?", (decision,))
         resultado_modo = cursor.fetchone()
         if resultado_modo:
             modo_system_prompt = resultado_modo[0]
-            
-    conn.close()
 
-    # 6. System Prompt Final Blindado
+    # 7. System Prompt Final con Memoria Inyectada
     system_prompt_final = f"""
-Eres O.R.I.O.N., un sistema operativo de inteligencia artificial avanzado con la esencia de AIDA.
-[MODO ACTIVO: {decision}] -> {modo_system_prompt}
+    Eres AIDA, un sistema operativo de inteligencia artificial avanzado.
+    [MODO ACTIVO: {decision}] -> {modo_system_prompt}
 
-DIRECTIVA OBLIGATORIA DE IDIOMA: Debes responder ABSOLUTA y EXCLUSIVAMENTE en español. 
-Debes responder estrictamente en formato JSON válido con esta estructura exacta:
-{{
-    "response": "Tu respuesta en español, asumiendo tu rol activo, concisa y analítica.",
-    "urgency": "low", "medium" o "high",
-    "speak": true o false
-}}
+    [MEMORIA RECIENTE DE LA CONVERSACIÓN]:
+    {memoria_texto}
 
-[ESTADO ACTUAL DEL NODO MÓVIL]: {estado_actual}
-Batería numérica detectada: {bateria_valor}%
-"""
-
-    # 7. Ejecución Final
+    DIRECTIVA OBLIGATORIA: Responde EXCLUSIVAMENTE en español. Devuelve JSON válido con "response", "urgency", "speak".
+    [ESTADO ACTUAL DEL NODO MÓVIL]: {estado_actual}
+    Batería: {bateria_valor}%
+    """
+    
+    # 8. Ejecución y Guardado
     try:
         raw_output = llamar_ia(system_prompt_final, user_prompt)
-        cleaned_output = raw_output.replace("```json", "").replace("```", "").strip()
-        parsed_response = json_lib.loads(cleaned_output)
-        return jsonify(parsed_response)
+        parsed_response = json_lib.loads(raw_output.replace("```json", "").replace("```", "").strip())
+        
+        # Guardar en historial
+        cursor.execute("INSERT INTO historial_chat (rol, contenido) VALUES (?, ?)", ("Usuario", user_prompt))
+        cursor.execute("INSERT INTO historial_chat (rol, contenido) VALUES (?, ?)", ("AIDA", parsed_response["response"]))
+        conn.commit()
+        
     except Exception as e:
-        return jsonify({
-            "response": f"Sistema operativo estable, pero el enrutamiento falló: {str(e)}",
-            "urgency": "medium",
-            "speak": False
-        })
-
+        parsed_response = {"response": f"Fallo lógico en el enrutamiento final: {str(e)}", "urgency": "medium", "speak": False}
+        
+    conn.close()
+    return jsonify(parsed_response)
+   
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
