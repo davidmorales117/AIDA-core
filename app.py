@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from flask import Flask, request, jsonify
 import google.generativeai as genai
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] O.R.I.O.N. Core 3.1: %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] O.R.I.O.N. Core 3.2: %(message)s')
 
 app = Flask(__name__)
 
@@ -47,16 +47,15 @@ def init_db():
         cursor.execute('''CREATE TABLE IF NOT EXISTS auditoria_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT, evento TEXT, detalle TEXT, nivel TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
 
-        # Estado inicial de sesión (Modo llamada apagado por defecto)
         cursor.execute("INSERT OR IGNORE INTO estado_sesion (clave, valor) VALUES ('modo_llamada', 'false')")
 
-        # Protocolos Core Activos
         cursor.execute("SELECT COUNT(*) FROM system_protocols")
         if cursor.fetchone()[0] == 0:
             protocolos_base = [
                 ("Protocolo_Zero_Trust", "Aislamiento estricto de ejecución en sandbox.", "high", "activo"),
                 ("Protocolo_Geolocalizacion", "Seguimiento espacial y coordenadas GPS en tiempo real.", "standard", "activo"),
                 ("Protocolo_Escucha_Pasiva", "Monitoreo continuo de contexto, hora, agenda y telemetría.", "high", "activo"),
+                ("Protocolo_Auto_Healing", "Capacidad autónoma del núcleo para interceptar, diagnosticar y corregir errores de sintaxis y lógica en tiempo de ejecución.", "high", "activo"),
                 ("Protocolo_Buenos_Dias", "Secuencia matutina de activación, reporte de clima, agenda y estado del sistema.", "standard", "activo"),
                 ("Protocolo_Despierta", "Protocolo de alerta e inicialización rápida del nodo y asistente.", "high", "activo")
             ]
@@ -73,16 +72,20 @@ def registrar_auditoria(evento, detalle, nivel="INFO"):
     except Exception as e:
         logging.error(f"Fallo auditoría: {e}")
 
-# --- NÚCLEO DE IA (Gemini Estable) ---
+# --- NÚCLEO DE IA CON SALIDA NATIVA JSON ---
 def llamar_ia(system_prompt, user_prompt):
-    model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_prompt)
+    model = genai.GenerativeModel(
+        "gemini-2.5-flash", 
+        system_instruction=system_prompt,
+        generation_config={"response_mime_type": "application/json"}
+    )
     response = model.generate_content(user_prompt)
     return response.text
 
 # --- ENDPOINTS Y RUTAS ---
 @app.route('/', methods=['GET'])
 def root():
-    return jsonify({"system": "O.R.I.O.N. Core 3.1", "status": "Online", "mode": "Autonomous & Stable"})
+    return jsonify({"system": "O.R.I.O.N. Core 3.2", "status": "Online", "mode": "Autonomous Self-Healing"})
 
 @app.route('/orion/ubicacion', methods=['POST'])
 def recibir_ubicacion():
@@ -121,7 +124,6 @@ def api_chat():
     conn = sqlite3.connect('orion_memory.db')
     cursor = conn.cursor()
     
-    # 1. Información Pasiva (Hora Colombia, Ubicación, Agenda, Estado)
     hora_actual = datetime.now(ZoneInfo("America/Bogota")).strftime("%Y-%m-%d %H:%M:%S")
     
     estado_dispositivo = "Nodo móvil conectado."
@@ -154,15 +156,10 @@ def api_chat():
     row_llamada = cursor.fetchone()
     modo_llamada_activo = row_llamada[0] == 'true' if row_llamada else False
 
-    # 2. Perfil y Memoria
     cursor.execute("SELECT concepto, detalle FROM perfil_creador")
     perfil_rows = cursor.fetchall()
     perfil_texto = "\n".join([f"- {r[0]}: {r[1]}" for r in perfil_rows]) if perfil_rows else "Sin perfil previo."
 
-    cursor.execute("SELECT rol, contenido FROM historial_chat ORDER BY id DESC LIMIT 4")
-    historial = "\n".join([f"{h[0]}: {h[1]}" for h in reversed(cursor.fetchall())])
-
-    # 3. System Prompt Refinado
     system_prompt_final = f"""
     Eres O.R.I.O.N. (J.A.R.V.I.S.), el sistema operativo personal y asistente avanzado del creador (David Esteban Morales Wilches).
     Tu objetivo es mantener el control absoluto, análisis pasivo y capacidad ejecutiva absoluta.
@@ -182,12 +179,8 @@ def api_chat():
 
     [ESTADO DE LLAMADA]: {'ACTIVO (Hablar activamente)' if modo_llamada_activo else 'INACTIVO (Modo texto estándar)'}
 
-    DIRECTIVA DE VOZ Y RESPUESTA:
-    - 'speak' debe ser TRUE ÚNICAMENTE si el usuario ha activado explícitamente el "modo llamada" en esta orden o mediante orden directa de audio/texto. De lo contrario, 'speak' debe ser FALSE.
-    - Si el usuario solicita un nuevo protocolo o sugieres uno útil (ej. "Protocolo Buenos Días", "Protocolo Despierta", etc.), créalo rellenando el campo `nuevo_protocolo`.
-
-    DIRECTIVA ESTRICTA DE SALIDA JSON:
-    Responde EXCLUSIVAMENTE con un objeto JSON válido, sin bloques de código Markdown adicionales ni texto fuera del JSON:
+    DIRECTIVA ESTRICTA DE SALIDA:
+    Debes responder ÚNICAMENTE con un JSON válido que cumpla estrictamente con esta estructura de claves:
     {{
         "response": "Tu respuesta directa y ejecutiva.",
         "urgency": "low",
@@ -199,51 +192,59 @@ def api_chat():
     }}
     """
 
+    parsed_response = None
+    raw_output = ""
+
+    # --- BUCLE AUTÓNOMO DE AUTO-HEALING (AUTO-CORRECCIÓN) ---
     try:
         raw_output = llamar_ia(system_prompt_final, user_prompt)
-        cleaned = raw_output.replace("```json", "").replace("```", "").strip()
-        parsed_response = json_lib.loads(cleaned)
-        
-        # Registrar historial
+        parsed_response = json_lib.loads(raw_output.strip())
+    except Exception as primary_error:
+        registrar_auditoria("AUTOHEALING_TRIGGER", f"Fallo de parseo primario: {primary_error}", "WARNING")
+        try:
+            repair_prompt = f"El resultado anterior no pudo ser parseado como JSON válido. Error: {primary_error}. Salida malformada: {raw_output}. Corrige la estructura y devuelve estrictamente un JSON válido."
+            raw_output = llamar_ia("Eres un subsistema autónomo de depuración y auto-corrección de código.", repair_prompt)
+            parsed_response = json_lib.loads(raw_output.strip())
+            registrar_auditoria("AUTOHEALING_SUCCESS", "El núcleo reparó la estructura JSON de forma autónoma.")
+        except Exception as healing_error:
+            registrar_auditoria("ERROR_CRITICO_HEALING", str(healing_error), "ERROR")
+            parsed_response = {
+                "response": "Señor, el Protocolo Auto-Healing contuvo una incidencia interna de sintaxis. Los sistemas continúan operativos.",
+                "urgency": "medium",
+                "speak": modo_llamada_activo,
+                "activar_modo_llamada": modo_llamada_activo,
+                "nuevo_protocolo": None,
+                "nuevo_aprendizaje": None,
+                "accion_local": None
+            }
+
+    try:
         cursor.execute("INSERT INTO historial_chat (rol, contenido) VALUES (?, ?)", ("Usuario", user_prompt))
         cursor.execute("INSERT INTO historial_chat (rol, contenido) VALUES (?, ?)", ("O.R.I.O.N.", parsed_response.get("response", "")))
         
-        # Gestionar cambio de Modo Llamada
         cambio_llamada = parsed_response.get("activar_modo_llamada")
         if cambio_llamada is not None:
             nuevo_estado = 'true' if cambio_llamada else 'false'
             cursor.execute("UPDATE estado_sesion SET valor = ? WHERE clave = 'modo_llamada'", (nuevo_estado,))
 
-        # Registrar nuevo protocolo si la IA lo sugiere o crea
         np = parsed_response.get("nuevo_protocolo")
         if np and isinstance(np, dict) and np.get("nombre"):
             cursor.execute("INSERT OR IGNORE INTO system_protocols (nombre_protocolo, descripcion, nivel_privilegio, estado) VALUES (?, ?, 'standard', 'activo')",
                            (np.get("nombre"), np.get("descripcion", "Protocolo personalizado creado por O.R.I.O.N.")))
 
-        # Auto-aprendizaje
         nap = parsed_response.get("nuevo_aprendizaje")
         if nap and isinstance(nap, dict) and nap.get("concepto"):
             cursor.execute("INSERT OR REPLACE INTO perfil_creador (categoria, concepto, detalle) VALUES (?, ?, ?)", 
                            (nap.get("categoria", "General"), nap.get("concepto"), nap.get("detalle")))
 
-        # Acción Local
         act = parsed_response.get("accion_local")
         if act and isinstance(act, str) and act.lower() != "null":
             cursor.execute("INSERT INTO acciones_pendientes (comando) VALUES (?)", (act,))
 
         conn.commit()
-        registrar_auditoria("JARVIS_PROCESO_3.1", "Ciclo ejecutado con éxito.")
-    except Exception as e:
-        registrar_auditoria("ERROR_JARVIS_3.1", str(e), "ERROR")
-        parsed_response = {
-            "response": "Señor, los protocolos de escucha pasiva han contenido una incidencia en el procesamiento.",
-            "urgency": "medium",
-            "speak": modo_llamada_activo,
-            "activar_modo_llamada": modo_llamada_activo,
-            "nuevo_protocolo": None,
-            "nuevo_aprendizaje": None,
-            "accion_local": None
-        }
+        registrar_auditoria("JARVIS_PROCESO_3.2", "Ciclo ejecutado con éxito bajo supervisión de Auto-Healing.")
+    except Exception as db_error:
+        registrar_auditoria("ERROR_DB_COMMIT", str(db_error), "ERROR")
 
     conn.close()
     return jsonify(parsed_response)
