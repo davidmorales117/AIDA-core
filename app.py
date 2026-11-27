@@ -14,7 +14,16 @@ app = Flask(__name__)
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
-
+    
+@app.before_request
+def exigir_token():
+    if request.path == "/":
+        return None
+    token = os.environ.get("NEXUS_TOKEN", "")
+    recibido = request.headers.get("Authorization", "")
+    if not token or not hmac.compare_digest(recibido.encode(), f"Bearer {token}".encode()):
+        return jsonify({"error": "no autorizado"}), 401
+        
 # --- INICIALIZACIÓN DE LA BASE DE DATOS Y PROTOCOLOS ---
 def init_db():
     with sqlite3.connect('orion_memory.db') as conn:
@@ -217,7 +226,12 @@ def api_chat():
                 "nuevo_aprendizaje": None,
                 "accion_local": None
             }
-
+            
+    if not isinstance(parsed_response, dict):
+        parsed_response = {"response": "El modelo devolvió un formato inválido."}
+    if parsed_response.get("accion_local") not in ACCIONES_PERMITIDAS:
+        parsed_response["accion_local"] = None
+        
     try:
         cursor.execute("INSERT INTO historial_chat (rol, contenido) VALUES (?, ?)", ("Usuario", user_prompt))
         cursor.execute("INSERT INTO historial_chat (rol, contenido) VALUES (?, ?)", ("O.R.I.O.N.", parsed_response.get("response", "")))
@@ -252,13 +266,4 @@ def api_chat():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
-import hmac
-
-@app.before_request
-def exigir_token():
-    if request.path == "/":
-        return None
-    token = os.environ.get("NEXUS_TOKEN", "")
-    recibido = request.headers.get("Authorization", "")
-    if not token or not hmac.compare_digest(recibido.encode(), f"Bearer {token}".encode()):
-        return jsonify({"error": "no autorizado"}), 401
+    
